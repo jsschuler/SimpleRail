@@ -132,15 +132,13 @@ function run_sa(Q, offset, var_index=build_var_index(),
                 fleet_capacity=FLEET_CAPACITY,
                 rng=Random.default_rng())
 
-    x     = random_feasible_config(var_index, participation, fleet_capacity, rng)
-    e_cur = qubo_energy(x, Q)
-    w_cur = offset - e_cur
+    x       = random_feasible_config(var_index, participation, fleet_capacity, rng)
+    e_cur   = qubo_energy(x, Q)
+    best_e  = e_cur
 
-    best_x       = copy(x)
-    best_welfare = w_cur
-
-    T = T0
-    x_new = similar(x)
+    best_x  = copy(x)
+    T       = T0
+    x_new   = similar(x)
 
     for step in 1:max_steps
         copyto!(x_new, x)
@@ -160,10 +158,9 @@ function run_sa(Q, offset, var_index=build_var_index(),
         if dE < 0 || rand(rng) < exp(-dE / T)
             copyto!(x, x_new)
             e_cur = e_new
-            w_cur = offset - e_cur
 
-            if w_cur > best_welfare
-                best_welfare = w_cur
+            if e_cur < best_e
+                best_e = e_cur
                 copyto!(best_x, x)
             end
         end
@@ -171,7 +168,8 @@ function run_sa(Q, offset, var_index=build_var_index(),
         T *= alpha
     end
 
-    final_welfare = offset - qubo_energy(x, Q)
+    best_welfare  = welfare_from_config(best_x, Q, offset, var_index, participation, fleet_capacity)
+    final_welfare = welfare_from_config(x, Q, offset, var_index, participation, fleet_capacity)
     feasible      = compute_welfare_direct(best_x, var_index, participation,
                                            DEMAND_PARAMS, COST, FIXED_COST,
                                            fleet_capacity) > -Inf

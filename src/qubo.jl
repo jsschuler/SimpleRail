@@ -237,25 +237,33 @@ function build_qubo(participation=PARTICIPATION,
 end
 
 """
-    welfare_from_config(x, Q, offset, var_index)
+    welfare_from_config(x, Q, offset, var_index, participation)
 
 Recover total industry welfare from a configuration vector x and the QUBO matrix.
-welfare = -x'Qx + offset
-(The QUBO minimizes -welfare, so welfare = offset - QUBO_energy.)
+
+The QUBO energy E(x) = x'Qx + offset = -W(x) + fleet_pen(x) + OH_pen(x),
+so W(x) = -(x'Qx + offset) + fleet_pen(x) + OH_pen(x).
+The penalty terms must be added back explicitly because feasible configs
+may still have non-zero fleet_pen when sum(f) < fleet_cap.
 """
-function welfare_from_config(x, Q, offset, var_index=nothing)
-    energy = 0.0
-    n = length(x)
-    for i in 1:n
-        x[i] == 0 && continue
-        for j in i:n
-            x[j] == 0 && continue
-            if i == j
-                energy += Q[i, i]
-            else
-                energy += Q[i, j]
-            end
-        end
+function welfare_from_config(x, Q, offset, var_index, participation=PARTICIPATION,
+                              fleet_capacity=FLEET_CAPACITY)
+    energy = qubo_energy(x, Q)
+
+    oh_pen = 0.0
+    for f in FIRMS, k in CORRIDORS
+        get(participation, (f, k), false) || continue
+        s = x[var_index[(f, k, :b_low)]] + x[var_index[(f, k, :b_mid)]] + x[var_index[(f, k, :b_hi)]]
+        oh_pen += ONEHOT_PENALTY * (s - 1)^2
     end
-    offset - energy
+
+    fleet_pen = 0.0
+    for f in FIRMS
+        active_k = active_corridors_for_firm(f, participation)
+        isempty(active_k) && continue
+        s = sum(x[var_index[(f, k, :freq)]] for k in active_k)
+        fleet_pen += FLEET_PENALTY * (s - fleet_capacity)^2
+    end
+
+    -(energy + offset) + fleet_pen + oh_pen
 end

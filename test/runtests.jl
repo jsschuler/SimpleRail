@@ -10,7 +10,7 @@ function test_qubo_correctness()
     n_pass = 0
     for _ in 1:50
         x = random_feasible_config(var_index, PARTICIPATION, FLEET_CAPACITY, rng)
-        w_qubo   = welfare_from_config(x, Q, offset)
+        w_qubo   = welfare_from_config(x, Q, offset, var_index)
         w_direct = compute_welfare_direct(x, var_index)
         if abs(w_qubo - w_direct) < 1e-8
             n_pass += 1
@@ -49,21 +49,21 @@ function test_random_feasible_fleet()
 end
 
 function test_profit_undercutting_incentive()
-    # All-high-rate vs all-mid-rate, both low-frequency
+    # With d*(n-1) > b (cross-rate exceeds own-rate sensitivity), all-high-rate
+    # coordination is collectively more profitable than all-mid-rate.
     var_index = build_var_index()
     n = length(var_index)
     x_hi  = zeros(Int, n)
     x_mid = zeros(Int, n)
     for f in FIRMS, k in CORRIDORS
         get(PARTICIPATION, (f, k), false) || continue
-        x_hi[var_index[(f, k, :b_hi)]]  = 1
+        x_hi[var_index[(f, k, :b_hi)]]   = 1
         x_mid[var_index[(f, k, :b_mid)]] = 1
         # freq stays 0
     end
     w_hi  = compute_welfare_direct(x_hi,  var_index)
     w_mid = compute_welfare_direct(x_mid, var_index)
-    # Under the parameter values, mid rate should generate higher welfare (undercutting)
-    @test w_mid > w_hi
+    @test w_hi > w_mid
 end
 
 function test_fleet_penalty_active()

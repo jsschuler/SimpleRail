@@ -16,6 +16,7 @@ export FIRMS, CORRIDORS, PARTICIPATION
 export DEMAND_PARAMS, COST, FIXED_COST
 export FLEET_CAPACITY, FLEET_PENALTY, ONEHOT_PENALTY
 export build_var_index, random_feasible_config
+export active_pairs, active_corridors_for_firm, active_firms_for_corridor
 export build_qubo, compute_welfare_direct, welfare_from_config
 export exact_solve_corridor
 export run_sa, run_sqa

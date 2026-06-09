@@ -24,8 +24,8 @@ function run_sqa(Q, offset, var_index=build_var_index(),
                 for _ in 1:P]
     energies = [qubo_energy(r, Q) for r in replicas]
 
-    best_x       = copy(replicas[argmin(energies)])
-    best_welfare = offset - minimum(energies)
+    best_e  = minimum(energies)
+    best_x  = copy(replicas[argmin(energies)])
 
     x_new = zeros(Int, n)
 
@@ -95,11 +95,10 @@ function run_sqa(Q, offset, var_index=build_var_index(),
             copyto!(replicas[slice], x_new)
             energies[slice] = e_new
 
-            # Track best across all slices
+            # Track best across all slices (by minimum QUBO energy)
             for p in 1:P
-                w = offset - energies[p]
-                if w > best_welfare
-                    best_welfare = w
+                if energies[p] < best_e
+                    best_e = energies[p]
                     copyto!(best_x, replicas[p])
                 end
             end
@@ -108,7 +107,8 @@ function run_sqa(Q, offset, var_index=build_var_index(),
 
     # Final: best slice by energy
     final_slice   = argmin(energies)
-    final_welfare = offset - energies[final_slice]
+    best_welfare  = welfare_from_config(best_x, Q, offset, var_index, participation, fleet_capacity)
+    final_welfare = welfare_from_config(replicas[final_slice], Q, offset, var_index, participation, fleet_capacity)
     feasible      = compute_welfare_direct(best_x, var_index, participation,
                                            DEMAND_PARAMS, COST, FIXED_COST,
                                            fleet_capacity) > -Inf
