@@ -55,16 +55,18 @@ function active_firms_for_corridor(corridor, participation=PARTICIPATION)
 end
 
 """
-    build_var_index(participation)
+    build_var_index(participation, fleet_capacity)
 
-Build the canonical variable index mapping
-  (firm, corridor, var_type) -> Int
-where var_type ∈ {:b_low, :b_mid, :b_hi, :freq}.
+Build the canonical variable index mapping  (firm, corridor, var_type) -> Int
+for the 60 economic variables plus slack variables for the one-sided fleet penalty.
 
-Variables are ordered: iterate over all active (firm, corridor) pairs in a
-fixed order, and for each pair emit b_low, b_mid, b_hi, freq in that order.
+Economic vars: var_type ∈ {:b_low, :b_mid, :b_hi, :freq}.
+Slack vars: key (firm, :_slack, :s0) and (firm, :_slack, :s1), one pair per firm
+  whose active-corridor count exceeds fleet_capacity.  These auxiliary bits encode
+  unused fleet capacity so the fleet penalty can be written as a proper QUBO
+  without penalising under-use.
 """
-function build_var_index(participation=PARTICIPATION)
+function build_var_index(participation=PARTICIPATION, fleet_capacity=FLEET_CAPACITY)
     pairs = sort(active_pairs(participation), by=p -> (string(p[1]), string(p[2])))
     idx = Dict{Tuple{Symbol,Symbol,Symbol}, Int}()
     i = 1
@@ -74,7 +76,28 @@ function build_var_index(participation=PARTICIPATION)
         idx[(f, k, :b_hi)]  = i;  i += 1
         idx[(f, k, :freq)]  = i;  i += 1
     end
+    # Slack vars for firms whose corridor count exceeds fleet_capacity.
+    # We need fleet_capacity slack bits per such firm to represent unused slots.
+    for f in sort(FIRMS, by=string)
+        n_active = length(active_corridors_for_firm(f, participation))
+        n_active > fleet_capacity || continue
+        for j in 0:(fleet_capacity - 1)
+            idx[(f, :_slack, Symbol("s$j"))] = i;  i += 1
+        end
+    end
     idx
+end
+
+"""
+    slack_vars_for_firm(firm, var_index, fleet_capacity) -> Vector{Int}
+
+Return the var_index positions of the slack variables for `firm`, or an empty
+vector if that firm has no slack vars.
+"""
+function slack_vars_for_firm(firm, var_index, fleet_capacity=FLEET_CAPACITY)
+    [var_index[(firm, :_slack, Symbol("s$j"))]
+     for j in 0:(fleet_capacity - 1)
+     if haskey(var_index, (firm, :_slack, Symbol("s$j")))]
 end
 
 const RATE_LOW  = 1.0
@@ -83,3 +106,11 @@ const RATE_HIGH = 3.0
 
 const RATE_LEVELS = [:b_low, :b_mid, :b_hi]
 const RATE_VALUES = Dict(:b_low => RATE_LOW, :b_mid => RATE_MID, :b_hi => RATE_HIGH)
+
+# Chain adjacency: ny_phl — phl_pit — pit_chi
+# Used to model multi-leg passengers: high frequency on one leg raises demand on adjacent legs.
+const CORRIDOR_ADJACENCY = Dict(
+    :ny_phl  => [:phl_pit],
+    :phl_pit => [:ny_phl, :pit_chi],
+    :pit_chi => [:phl_pit],
+)

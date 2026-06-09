@@ -21,14 +21,30 @@ function random_feasible_config(var_index=build_var_index(),
         x[var_index[(firm, corr, chosen)]] = 1
     end
 
-    # frequency variables: choose up to fleet_capacity corridors per firm
+    # frequency and slack variables
     for firm in FIRMS
         active_k = active_corridors_for_firm(firm, participation)
+        n_active = length(active_k)
         isempty(active_k) && continue
-        n_high = min(length(active_k), fleet_capacity)
-        high_corridors = randperm(rng, length(active_k))[1:n_high]
-        for idx in high_corridors
-            x[var_index[(firm, active_k[idx], :freq)]] = 1
+
+        if n_active <= fleet_capacity
+            # Fleet constraint can never bind — uniformly sample any freq assignment.
+            n_high = rand(rng, 0:n_active)
+        else
+            # Fleet-constrained: sample freq_sum uniformly in {0,...,fleet_capacity}.
+            n_high = rand(rng, 0:fleet_capacity)
+        end
+
+        perm = randperm(rng, n_active)
+        for pos in 1:n_high
+            x[var_index[(firm, active_k[perm[pos]], :freq)]] = 1
+        end
+
+        # Set slack vars (if any) to make sum(f) + sum(s) = fleet_capacity.
+        s_vars = slack_vars_for_firm(firm, var_index, fleet_capacity)
+        slack_needed = fleet_capacity - n_high
+        for (pos, iv) in enumerate(s_vars)
+            x[iv] = (pos - 1) < slack_needed ? 1 : 0
         end
     end
 
@@ -119,6 +135,21 @@ function propose_joint_swap!(x_new, var_index, participation, rng)
 end
 
 """
+    propose_slack_flip!(x_new, var_index, participation, fleet_capacity, rng)
+
+Flip one slack variable chosen uniformly at random from all firms that have slack vars.
+"""
+function propose_slack_flip!(x_new, var_index, participation, fleet_capacity, rng)
+    all_slack = Int[]
+    for f in FIRMS
+        append!(all_slack, slack_vars_for_firm(f, var_index, fleet_capacity))
+    end
+    isempty(all_slack) && return
+    iv = rand(rng, all_slack)
+    x_new[iv] = 1 - x_new[iv]
+end
+
+"""
     run_sa(Q, offset, var_index, participation;
            T0, alpha, max_steps, fleet_capacity, rng)
     -> (best_config, best_welfare, final_config, final_welfare, feasible)
@@ -144,12 +175,14 @@ function run_sa(Q, offset, var_index=build_var_index(),
         copyto!(x_new, x)
 
         r = rand(rng)
-        if r < 0.5
+        if r < 0.42
             propose_freq_flip!(x_new, var_index, participation, rng)
-        elseif r < 0.8
+        elseif r < 0.70
             propose_rate_rotate!(x_new, var_index, participation, rng)
-        else
+        elseif r < 0.88
             propose_joint_swap!(x_new, var_index, participation, rng)
+        else
+            propose_slack_flip!(x_new, var_index, participation, fleet_capacity, rng)
         end
 
         e_new = qubo_energy(x_new, Q)

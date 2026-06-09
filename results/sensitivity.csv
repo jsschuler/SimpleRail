@@ -1,0 +1,10 @@
+fleet_capacity,fixed_cost,d_param,sa_best,sqa_best,sa_sqa_gap,decoupled_exact,coupling_value,varied_param
+1,5.0,2.0,894.0,894.0,0.0,894.0,0.0,fleet_capacity
+2,5.0,2.0,894.0,894.0,0.0,894.0,0.0,fleet_capacity
+3,5.0,2.0,894.0,894.0,0.0,894.0,0.0,fleet_capacity
+2,0.0,2.0,894.0,894.0,0.0,894.0,0.0,fixed_cost
+2,5.0,2.0,894.0,894.0,0.0,894.0,0.0,fixed_cost
+2,15.0,2.0,894.0,894.0,0.0,894.0,0.0,fixed_cost
+2,5.0,1.0,522.0,522.0,0.0,522.0,0.0,d_param
+2,5.0,2.0,894.0,894.0,0.0,894.0,0.0,d_param
+2,5.0,4.0,1633.0,1638.0,5.0,1638.0,0.0,d_param

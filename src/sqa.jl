@@ -46,12 +46,14 @@ function run_sqa(Q, offset, var_index=build_var_index(),
         copyto!(x_new, replicas[slice])
 
         r = rand(rng)
-        if r < 0.5
+        if r < 0.42
             propose_freq_flip!(x_new, var_index, participation, rng)
-        elseif r < 0.8
+        elseif r < 0.70
             propose_rate_rotate!(x_new, var_index, participation, rng)
-        else
+        elseif r < 0.88
             propose_joint_swap!(x_new, var_index, participation, rng)
+        else
+            propose_slack_flip!(x_new, var_index, participation, fleet_capacity, rng)
         end
 
         # Hard-enforce one-hot: check if the proposed state has any violation

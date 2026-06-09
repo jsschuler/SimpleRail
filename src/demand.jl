@@ -4,6 +4,19 @@ const DEMAND_PARAMS = (
     d = 2.0,
     e = 3.0,
     g = 1.0,
+    h = 0.0,   # cross-corridor frequency spillover (multi-leg passengers); 0 = no spillover
+)
+
+# Extended model: h > 0 enables the multi-leg passenger cross-corridor spillover.
+# At h=3 the spillover from phl_pit's average frequency adds 3 to demand on ny_phl and pit_chi.
+# This makes cross-corridor fleet allocation a coordination problem with coupling_value > 0.
+const DEMAND_PARAMS_SPILLOVER = (
+    a = 20.0,
+    b = 5.0,
+    d = 2.0,
+    e = 3.0,
+    g = 1.0,
+    h = 3.0,
 )
 
 const COST       = 1.0
@@ -26,6 +39,18 @@ function compute_demand(firm, corridor, rates, freqs, params, participation=PART
     cross_freq = sum(freqs[(j, corridor)] for j in competitors; init=0.0)
     d = params.a - params.b * r_i + params.d * cross_rate +
         params.e * f_i - params.g * cross_freq
+
+    # Cross-corridor spillover: multi-leg passengers raise demand when adjacent legs
+    # have high average frequency.  Skipped when params.h == 0 (default).
+    if params.h != 0.0
+        for k_adj in get(CORRIDOR_ADJACENCY, corridor, Symbol[])
+            firms_adj = [f for f in FIRMS if get(participation, (f, k_adj), false)]
+            isempty(firms_adj) && continue
+            avg_freq_adj = sum(get(freqs, (j, k_adj), 0.0) for j in firms_adj) / length(firms_adj)
+            d += params.h * avg_freq_adj
+        end
+    end
+
     max(0.0, d)
 end
 

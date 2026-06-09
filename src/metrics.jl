@@ -212,6 +212,18 @@ function run_decoupled_baseline(participation=PARTICIPATION,
                                        fleet_capacity, FLEET_PENALTY, ONEHOT_PENALTY)
         vi_c = build_var_index(sub_part)
 
+        firms_in_corr = active_firms_for_corridor(corr, participation)
+
+        # Helper: expand a per-corridor config (vi_c-indexed) to full var_index space.
+        function expand_to_full(bc)
+            full = zeros(Int, length(var_index))
+            for f in firms_in_corr, vt in [:b_low, :b_mid, :b_hi, :freq]
+                haskey(vi_c, (f, corr, vt)) || continue
+                full[var_index[(f, corr, vt)]] = bc[vi_c[(f, corr, vt)]]
+            end
+            full
+        end
+
         # SA ensemble
         sa_bests   = Float64[]
         sa_configs = Vector{Vector{Int}}()
@@ -219,7 +231,7 @@ function run_decoupled_baseline(participation=PARTICIPATION,
             bc, bw, _, _, _ = run_sa(Q_c, offset_c, vi_c, sub_part;
                                      fleet_capacity=fleet_capacity, rng=rng)
             push!(sa_bests, bw)
-            push!(sa_configs, bc)
+            push!(sa_configs, expand_to_full(bc))
         end
 
         # SQA ensemble
@@ -229,7 +241,7 @@ function run_decoupled_baseline(participation=PARTICIPATION,
             bc, bw, _, _, _ = run_sqa(Q_c, offset_c, vi_c, sub_part;
                                       fleet_capacity=fleet_capacity, rng=rng)
             push!(sqa_bests, bw)
-            push!(sqa_configs, bc)
+            push!(sqa_configs, expand_to_full(bc))
         end
 
         corridor_results[corr] = (
@@ -245,25 +257,12 @@ function run_decoupled_baseline(participation=PARTICIPATION,
         )
     end
 
-    # Concatenate per-corridor exact solutions into a full config
+    # exact_solve_corridor already expands to full var_index, so just OR them together.
     full_exact_config = zeros(Int, length(var_index))
     for corr in CORRIDORS
         src = corridor_results[corr].exact_config
-        for (key, idx) in var_index
-            key[2] == corr || continue
-            if idx <= length(src) && src[idx] != 0
-                full_exact_config[idx] = src[idx]
-            end
-        end
-    end
-
-    # Fill missing (firms not in a corridor stay 0; but we need one-hot for all active)
-    # The exact_config from exact_solve_corridor already writes into full var_index slots
-    full_exact_config_corrected = zeros(Int, length(var_index))
-    for corr in CORRIDORS
-        ex_cfg = corridor_results[corr].exact_config
-        for v in 1:length(ex_cfg)
-            ex_cfg[v] != 0 && (full_exact_config_corrected[v] = ex_cfg[v])
+        for v in eachindex(src)
+            src[v] != 0 && (full_exact_config[v] = src[v])
         end
     end
 
@@ -273,11 +272,11 @@ function run_decoupled_baseline(participation=PARTICIPATION,
 
     # Fleet violation check (pre-repair)
     n_violations = 0
-    # Build concatenated SA best config
+    # SA best configs are already expanded to full var_index space; just OR them.
     concat_sa_config = zeros(Int, length(var_index))
     for corr in CORRIDORS
         src = corridor_results[corr].sa_best_config
-        for v in 1:length(src)
+        for v in eachindex(src)
             src[v] != 0 && (concat_sa_config[v] = src[v])
         end
     end

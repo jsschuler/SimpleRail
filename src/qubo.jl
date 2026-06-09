@@ -44,7 +44,7 @@ function build_qubo(participation=PARTICIPATION,
                     fleet_penalty=FLEET_PENALTY,
                     onehot_penalty=ONEHOT_PENALTY)
 
-    var_index = build_var_index(participation)
+    var_index = build_var_index(participation, fleet_capacity)
     n = length(var_index)
     Q = zeros(Float64, n, n)
     offset = 0.0
@@ -180,6 +180,39 @@ function build_qubo(participation=PARTICIPATION,
     end
 
     # -----------------------------------------------------------------------
+    # Cross-corridor spillover terms (multi-leg passengers, params.h > 0)
+    #
+    # For firm i on corridor k, adjacent corridor k':
+    #   welfare contribution: (r[i,k] - cost) * h/n_{k'} * sum_{j in k'} f[j,k']
+    #   = sum_x (r_x - cost) * h/n_{k'} * b_x[i,k] * f[j,k']  for each j in k'
+    #
+    # Each b_x[i,k] * f[j,k'] is a product of two distinct binary variables — quadratic.
+    # Note: when r_x == cost (b_low, since r_low = COST = 1.0), coefficient = 0, so only
+    # b_mid and b_hi contribute.  No offset change, no diagonal change.
+    # -----------------------------------------------------------------------
+    if demand_params.h != 0.0
+        for firm in FIRMS, corr in CORRIDORS
+            get(participation, (firm, corr), false) || continue
+            i_bl = var_index[(firm, corr, :b_low)]
+            i_bm = var_index[(firm, corr, :b_mid)]
+            i_bh = var_index[(firm, corr, :b_hi)]
+            rate_vars_local = [(i_bl, RATE_LOW), (i_bm, RATE_MID), (i_bh, RATE_HIGH)]
+
+            for k_adj in get(CORRIDOR_ADJACENCY, corr, Symbol[])
+                firms_adj = [f for f in FIRMS if get(participation, (f, k_adj), false)]
+                isempty(firms_adj) && continue
+                n_adj = length(firms_adj)
+                for j_adj in firms_adj
+                    j_f = var_index[(j_adj, k_adj, :freq)]
+                    for (iv, rv) in rate_vars_local
+                        add_Q!(iv, j_f, -(rv - cost) * demand_params.h / n_adj)
+                    end
+                end
+            end
+        end
+    end
+
+    # -----------------------------------------------------------------------
     # One-hot penalty: ONEHOT_PENALTY * (b_low + b_mid + b_hi - 1)^2
     # Expand: sum_x b_x^2 + 2*sum_{x<y} b_x*b_y - 2*sum_x b_x + 1
     # diagonal: (1 - 2)*b_x = -b_x for each x  (b_x^2 = b_x for binary)
@@ -207,29 +240,39 @@ function build_qubo(participation=PARTICIPATION,
     end
 
     # -----------------------------------------------------------------------
-    # Fleet penalty: FLEET_PENALTY * (sum_k f[i,k] - fleet_capacity)^2
-    # Expand: sum_k f[i,k]^2 + 2*sum_{k<k'} f[i,k]*f[i,k']
-    #         - 2*fleet_capacity*sum_k f[i,k] + fleet_capacity^2
-    # diagonal: (1 - 2*fleet_capacity)*f[i,k]
-    # off-diag: 2*f[i,k]*f[i,k'] for k < k'
-    # constant: fleet_capacity^2
+    # Fleet penalty (ONE-SIDED: zero iff sum(f) <= fleet_capacity)
+    #
+    # For firms with n_active <= fleet_capacity: constraint always satisfied, skip.
+    # For firms with n_active > fleet_capacity: introduce slack vars s_0...s_{K-1}
+    #   (K = fleet_capacity) stored in var_index as (firm, :_slack, :s0) etc.
+    #   Encode unused capacity: s = sum(s_j) ∈ {0,...,K}.
+    #   Constraint:  sum_k f[i,k] + sum_j s_j = fleet_capacity
+    #   Penalty:     fleet_penalty * (sum_k f[i,k] + sum_j s_j - fleet_capacity)^2
+    #
+    # This is zero iff sum_f + sum_s = K (feasible), and strictly positive
+    # for sum_f > K (since sum_s >= 0 means sum_f+sum_s > K cannot be zeroed).
+    #
+    # Expansion of (sum_v - K)^2 over all_vars = [freq_vars; slack_vars]:
+    #   diagonal:  (1 - 2K) per var
+    #   off-diag:  2 per pair
+    #   constant:  K^2
     # -----------------------------------------------------------------------
     for firm in FIRMS
         active_k = active_corridors_for_firm(firm, participation)
+        n_active = length(active_k)
         isempty(active_k) && continue
-        freq_vars = [var_index[(firm, k, :freq)] for k in active_k]
+        n_active > fleet_capacity || continue   # always feasible — no penalty needed
 
-        # diagonal
-        for iv in freq_vars
+        freq_vars  = [var_index[(firm, k, :freq)] for k in active_k]
+        slack_vars = slack_vars_for_firm(firm, var_index, fleet_capacity)
+        all_vars   = vcat(freq_vars, slack_vars)
+
+        for iv in all_vars
             add_Q!(iv, iv, fleet_penalty * (1.0 - 2.0 * fleet_capacity))
         end
-
-        # off-diagonal pairs
-        for a_idx in 1:length(freq_vars), b_idx in (a_idx+1):length(freq_vars)
-            add_Q!(freq_vars[a_idx], freq_vars[b_idx], fleet_penalty * 2.0)
+        for a_idx in 1:length(all_vars), b_idx in (a_idx + 1):length(all_vars)
+            add_Q!(all_vars[a_idx], all_vars[b_idx], fleet_penalty * 2.0)
         end
-
-        # constant
         offset += fleet_penalty * fleet_capacity^2
     end
 
@@ -260,9 +303,12 @@ function welfare_from_config(x, Q, offset, var_index, participation=PARTICIPATIO
     fleet_pen = 0.0
     for f in FIRMS
         active_k = active_corridors_for_firm(f, participation)
+        n_active = length(active_k)
         isempty(active_k) && continue
-        s = sum(x[var_index[(f, k, :freq)]] for k in active_k)
-        fleet_pen += FLEET_PENALTY * (s - fleet_capacity)^2
+        n_active > fleet_capacity || continue   # no penalty term in QUBO for these firms
+        freq_sum  = sum(x[var_index[(f, k, :freq)]] for k in active_k)
+        slack_sum = sum(x[var_index[(f, :_slack, Symbol("s$j"))]] for j in 0:(fleet_capacity-1))
+        fleet_pen += FLEET_PENALTY * (freq_sum + slack_sum - fleet_capacity)^2
     end
 
     -(energy + offset) + fleet_pen + oh_pen

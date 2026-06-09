@@ -1,0 +1,3 @@
+label,g,fixed_cost,coupled_best,decoupled_exact,coupling_value,sa_best,sqa_best,sa_mean,sqa_mean,sa_std,sqa_std,coupled_best_gap,coupled_mean_gap,decoupled_sa_best,decoupled_sqa_best,decoupled_best_gap,sa_feas,sqa_feas
+A_g05_fc1,0.5,1.0,907.0,907.0,0.0,906.0,907.0,899.149,903.093,2.010184031336394,1.1634881626835334,1.0,3.94399999999996,907.0,907.0,0.0,1.0,1.0
+B_g00_fc2,0.0,2.0,938.0,954.0,-16.0,938.0,938.0,922.94,933.732,6.124206553171268,2.8199517953553945,0.0,10.791999999999916,954.0,954.0,0.0,1.0,1.0
