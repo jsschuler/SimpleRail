@@ -337,4 +337,4 @@ Six bugs were found and fixed during development:
 ## Contact
 
 Part of a research program on quantum annealing and institutional economics.
-Contact: jsschuler@oeconomia.ai
+Contact: jschule4<at>gmu.edu
